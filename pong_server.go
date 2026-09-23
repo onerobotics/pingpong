@@ -8,7 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
-	//"time"
+	"time"
 )
 
 const addr = "0.0.0.0:5000"
@@ -33,7 +33,7 @@ func handle(conn net.Conn) {
 		fmt.Printf("Received: %q\n", msg)
 
 		if msg == "PING" {
-			// time.Sleep(2 * time.Second)
+			time.Sleep(2 * time.Second)
 			if _, err := io.WriteString(conn, "PONG\n"); err != nil {
 				fmt.Printf("Write error: %v\n", err)
 				return

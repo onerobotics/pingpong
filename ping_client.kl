@@ -24,7 +24,7 @@ BEGIN
 	ENDIF
 END assert
 
-ROUTINE readBinary(response : STRING; timeoutMs : INTEGER; status : INTEGER)
+ROUTINE readBinary(response : STRING; msgLen : INTEGER; timeoutMs : INTEGER; status : INTEGER)
 VAR
 	nBytes : INTEGER
 	us     : INTEGER
@@ -38,17 +38,18 @@ BEGIN
 
 		BYTES_AHEAD(f, nBytes, status)
 		IF status<>0 THEN RETURN; ENDIF
-		IF nBytes=0 THEN
+		IF nBytes<msgLen THEN
 			DELAY(32)
 		ENDIF
-	UNTIL nBytes<>0
+	UNTIL nBytes>=msgLen
 
-	READ f(response::nBytes)
+	READ f(response::msgLen)
 	status = IO_STATUS(f)
 	IF status<>0 THEN RETURN; ENDIF
 
-	IF STR_LEN(response)>0 THEN
-		response = SUB_STR(response, 1, STR_LEN(response)-1)
+	-- strip the trailing newline
+	IF SUB_STR(response, msgLen, 1)=CHR(10) THEN
+		response = SUB_STR(response, 1, msgLen-1)
 	ENDIF
 END readBinary
 
@@ -80,7 +81,7 @@ END init
 ROUTINE readResponse(response : STRING; timeoutMs : INTEGER; status : INTEGER)
 BEGIN
 	IF modeBinary THEN
-		readBinary(response, timeoutMs, status)
+		readBinary(response, 5, timeoutMs, status)
 	ELSE
 		SET_FILE_ATR(f, ATR_TIMEOUT, timeoutMs) -- ms
 		readAscii(response, status)
@@ -114,7 +115,7 @@ BEGIN
 
 	WRITE('Sent: PING', CR)
 
-	readResponse(response, 1000, status)
+	readResponse(response, 3000, status)
 	SELECT status OF
 		CASE(0):
 			WRITE('Received: ', response, CR)
