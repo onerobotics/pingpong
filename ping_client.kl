@@ -1,0 +1,130 @@
+PROGRAM ping_client
+
+%NOLOCKGROUP
+%NOPAUSE = ERROR + COMMAND + TPENABLE
+
+CONST
+	CHR_CLS         = 128
+	CHR_HOME_CURSOR = 137
+
+VAR
+	modeBinary : BOOLEAN
+	f        : FILE
+	status   : INTEGER
+	response : STRING[128]
+
+ROUTINE assert(status : INTEGER)
+VAR
+	i : INTEGER
+BEGIN
+	IF status<>0 THEN
+		MSG_DISCO('C1:', i)
+		POST_ERR(status, '', 0, 2)
+		RETURN
+	ENDIF
+END assert
+
+ROUTINE readBinary(response : STRING; timeoutMs : INTEGER; status : INTEGER)
+VAR
+	nBytes : INTEGER
+	us     : INTEGER
+BEGIN
+	us = GET_USEC_TIM
+	REPEAT
+		IF (GET_USEC_SUB(GET_USEC_TIM, us)>timeoutMs*1000) THEN
+			status = 282 -- yes i know this is an invalid code
+			RETURN
+		ENDIF
+
+		BYTES_AHEAD(f, nBytes, status)
+		IF status<>0 THEN RETURN; ENDIF
+		IF nBytes=0 THEN
+			DELAY(32)
+		ENDIF
+	UNTIL nBytes<>0
+
+	READ f(response::nBytes)
+	status = IO_STATUS(f)
+	IF status<>0 THEN RETURN; ENDIF
+
+	IF STR_LEN(response)>0 THEN
+		response = SUB_STR(response, 1, STR_LEN(response)-1)
+	ENDIF
+END readBinary
+
+ROUTINE readASCII(response : STRING; status : INTEGER)
+BEGIN
+	READ f(response)
+	status = IO_STATUS(f)
+END readASCII
+
+ROUTINE initBinary
+BEGIN
+	SET_FILE_ATR(f, ATR_FIELD)
+END initBinary
+
+ROUTINE initASCII
+BEGIN
+	SET_FILE_ATR(f, ATR_EOL, 10) -- newline
+END initASCII
+
+ROUTINE init
+BEGIN
+	IF modeBinary THEN
+		initBinary
+	ELSE
+		initASCII
+	ENDIF
+END init
+
+ROUTINE readResponse(response : STRING; timeoutMs : INTEGER; status : INTEGER)
+BEGIN
+	IF modeBinary THEN
+		readBinary(response, timeoutMs, status)
+	ELSE
+		SET_FILE_ATR(f, ATR_TIMEOUT, timeoutMs) -- ms
+		readAscii(response, status)
+	ENDIF
+END readResponse
+
+BEGIN
+	IF UNINIT(modeBinary) THEN modeBinary=false; ENDIF
+
+	WRITE (CHR(CHR_CLS),CHR(CHR_HOME_CURSOR))
+	FORCE_SPMENU(tp_panel, SPI_TPUSER, 1)
+
+	init
+
+	MSG_DISCO('C1:', status)
+
+	WRITE('Connecting...', CR)
+	MSG_CONNECT('C1:', status)
+	assert(status)
+
+	WRITE('Opening file...', CR)
+	OPEN FILE f ('rw', 'C1:')
+	status = IO_STATUS(f)
+	assert(status)
+
+
+	WRITE('Sending PING...', CR)
+	WRITE f('PING', CR)
+	status = IO_STATUS(f)
+	assert(status)
+
+	WRITE('Sent: PING', CR)
+
+	readResponse(response, 1000, status)
+	SELECT status OF
+		CASE(0):
+			WRITE('Received: ', response, CR)
+		CASE(282): -- yes this is an invalid code
+			WRITE('Timed out waiting for a response', CR)
+		ELSE:
+			WRITE('Read failed, status = ', status, CR)
+	ENDSELECT
+
+	CLOSE FILE f
+	MSG_DISCO('C1:', status)
+	WRITE('Disconnect status:', status, CR)
+END ping_client
